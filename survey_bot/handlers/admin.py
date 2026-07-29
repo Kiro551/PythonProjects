@@ -29,7 +29,6 @@ async def cmd_users(message: Message):
         await message.answer("Пока нет зарегистрированных пользователей.")
         return
 
-    # Генерируем CSV файл со списком пользователей
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["User ID"])
@@ -45,6 +44,11 @@ async def process_edit_text(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.editing_text)
     await callback.message.edit_text("Введите новый текст сообщения для рассылки:")
 
+@router.callback_query(F.data == "edit_welcome")  # <-- НОВЫЙ ОБРАБОТЧИК
+async def process_edit_welcome(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminStates.editing_welcome)
+    await callback.message.edit_text("Введите новый текст приветственного сообщения (отправляется при /start):")
+
 @router.callback_query(F.data == "edit_link")
 async def process_edit_link(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.editing_link)
@@ -53,14 +57,20 @@ async def process_edit_link(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "set_time")
 async def process_set_time(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.setting_time)
-    await callback.message.edit_text("Введите дату и время рассылки в формате `ГГГГ-ММ-ДД ЧЧ:ММ` (например, 2023-12-31 15:00):", parse_mode="Markdown")
+    await callback.message.edit_text("Введите дату и время рассылки в формате `ГГГГ-ММ-ДД ЧЧ:ММ` (например, 2026-12-31 15:00):", parse_mode="Markdown")
 
-# Обработка ввода данных от админа
+# --- Обработка ввода данных от админа ---
 @router.message(AdminStates.editing_text)
 async def save_text(message: Message, state: FSMContext):
     await SettingsRepository.update_setting('message_text', message.text)
     await state.clear()
-    await message.answer("✅ Текст успешно обновлен!", reply_markup=get_admin_menu())
+    await message.answer("✅ Текст опроса успешно обновлен!", reply_markup=get_admin_menu())
+
+@router.message(AdminStates.editing_welcome)  # <-- НОВЫЙ ОБРАБОТЧИК СОХРАНЕНИЯ
+async def save_welcome(message: Message, state: FSMContext):
+    await SettingsRepository.update_setting('welcome_text', message.text)
+    await state.clear()
+    await message.answer("✅ Приветственное сообщение успешно обновлено!", reply_markup=get_admin_menu())
 
 @router.message(AdminStates.editing_link)
 async def save_link(message: Message, state: FSMContext):
@@ -71,11 +81,9 @@ async def save_link(message: Message, state: FSMContext):
 @router.message(AdminStates.setting_time)
 async def save_time(message: Message, state: FSMContext, bot: Bot):
     try:
-        # Парсим дату
         dt = datetime.strptime(message.text, "%Y-%m-%d %H:%M")
         await SettingsRepository.update_setting('scheduled_time', dt)
         
-        # Добавляем задачу в планировщик
         from scheduler.tasks import broadcast_survey
         scheduler.add_job(broadcast_survey, 'date', run_date=dt, args=[bot])
         
