@@ -5,6 +5,8 @@ class AdminStates(StatesGroup):
     editing_link = State()
     editing_welcome = State()
     setting_time = State()
+    editing_category_survey_text = State()
+    editing_category_survey_link = State()
 
 class FeedbackStates(StatesGroup):
     waiting_for_message = State()
@@ -14,6 +16,6 @@ class CategorySurveyStates(StatesGroup):
     choosing_specialization = State()
 
 class AdminBroadcastStates(StatesGroup):
-    choosing_type = State()              # Выбор типа рассылки
-    waiting_for_target_category = State() # Выбор категории
-    waiting_for_custom_text = State()     # Ожидание ввода кастомного текста
+    choosing_type = State()
+    waiting_for_target_category = State()
+    waiting_for_custom_text = State()

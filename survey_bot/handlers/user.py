@@ -7,6 +7,7 @@ from database.repositories import UserRepository, SettingsRepository
 from keyboards.reply import get_user_main_menu
 from keyboards.inline import get_degree_keyboard, get_specialization_keyboard
 from states import FeedbackStates, CategorySurveyStates
+from database.repositories import CategorySurveyRepository, CategoryRepository
 
 router = Router()
 
@@ -50,10 +51,33 @@ async def start_category_survey(message_or_query, state: FSMContext):
 
 
 @router.message(F.text == "📝 Пройти опрос")
-async def send_survey(message: Message):
-    settings = await SettingsRepository.get_settings()
-    text = settings.get('message_text', 'Текст не задан.')
-    link = settings.get('survey_link', 'Ссылка не задана.')
+async def send_survey(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    
+    # Получаем категорию пользователя
+    user_category = await UserRepository.get_user_category(user_id)
+    
+    if user_category is None:
+        # У пользователя нет категории — предлагаем уточнить данные
+        await message.answer("📋 Пожалуйста, уточните ваши данные, чтобы мы могли подобрать подходящий опрос.")
+        await start_category_survey(message, state)
+        return
+    
+    # Определяем корневую категорию (степень)
+    parent_cat_id = await CategoryRepository.get_parent_category(user_category)
+    root_cat_id = parent_cat_id if parent_cat_id else user_category
+    
+    # Получаем опрос для этой категории
+    survey = await CategorySurveyRepository.get_survey_for_category(root_cat_id)
+    
+    if not survey or not survey.get('survey_text') or not survey.get('survey_link'):
+        # Опрос не настроен
+        await message.answer("⚠️ Нет опросов для прохождения.")
+        return
+    
+    # Отправляем опрос
+    text = survey['survey_text']
+    link = survey['survey_link']
     await message.answer(f"{text}\n\n👉 {link}")
 
 

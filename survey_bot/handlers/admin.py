@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramForbiddenError
+from database.repositories import CategorySurveyRepository
 
 from filters import IsAdmin
 from states import AdminStates, AdminBroadcastStates, CategorySurveyStates
@@ -236,6 +237,101 @@ async def get_users_by_root_category(root_cat_id: int) -> list[int]:
         """
         cursor = await db.execute(query, (*child_ids, *settings.ADMIN_IDS))
         return [row[0] for row in await cursor.fetchall()]
+
+# --- НАСТРОЙКА ОПРОСОВ ПО КАТЕГОРИЯМ ---
+
+@router.callback_query(F.data == "category_surveys_menu")
+async def show_category_surveys_menu(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    kb = await get_category_surveys_menu()
+    await callback.message.edit_text("🎓 Выберите категорию для настройки опроса:", reply_markup=kb)
+    await callback.answer()
+
+@router.callback_query(F.data == "back_to_admin")
+async def back_to_admin(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("🛠 Админ-панель:", reply_markup=get_admin_menu())
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("cat_survey_"))
+async def show_category_survey_edit(callback: CallbackQuery, state: FSMContext):
+    cat_id = int(callback.data.split("_")[2])
+    cat_name = await CategoryRepository.get_category_name(cat_id)
+    
+    # Сохраняем ID категории в FSM
+    await state.update_data(editing_category_id=cat_id)
+    
+    # Получаем текущий опрос
+    survey = await CategorySurveyRepository.get_survey_for_category(cat_id)
+    
+    if survey:
+        text = f"🎓 Опрос для категории: **{cat_name}**\n\n"
+        text += f"📝 Текст: {survey.get('survey_text', 'Не задан')}\n"
+        text += f"🔗 Ссылка: {survey.get('survey_link', 'Не задана')}"
+    else:
+        text = f"🎓 Опрос для категории: **{cat_name}**\n\n⚠️ Опрос еще не настроен."
+    
+    kb = get_category_survey_edit_keyboard(cat_id)
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("edit_cat_survey_text_"))
+async def start_edit_category_survey_text(callback: CallbackQuery, state: FSMContext):
+    cat_id = int(callback.data.split("_")[4])
+    await state.update_data(editing_category_id=cat_id)
+    await state.set_state(AdminStates.editing_category_survey_text)
+    await callback.message.edit_text("Введите новый текст опроса для этой категории:")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("edit_cat_survey_link_"))
+async def start_edit_category_survey_link(callback: CallbackQuery, state: FSMContext):
+    cat_id = int(callback.data.split("_")[4])
+    await state.update_data(editing_category_id=cat_id)
+    await state.set_state(AdminStates.editing_category_survey_link)
+    await callback.message.edit_text("Введите новую ссылку на Google Форму для этой категории:")
+    await callback.answer()
+
+@router.message(AdminStates.editing_category_survey_text)
+async def save_category_survey_text(message: Message, state: FSMContext):
+    data = await state.get_data()
+    cat_id = data.get('editing_category_id')
+    
+    if not cat_id:
+        await message.answer("❌ Ошибка: категория не выбрана.")
+        await state.clear()
+        return
+    
+    # Получаем текущую ссылку
+    survey = await CategorySurveyRepository.get_survey_for_category(cat_id)
+    current_link = survey.get('survey_link', '') if survey else ''
+    
+    # Сохраняем новый текст
+    await CategorySurveyRepository.update_survey(cat_id, message.text, current_link)
+    await state.clear()
+    
+    cat_name = await CategoryRepository.get_category_name(cat_id)
+    await message.answer(f"✅ Текст опроса для **{cat_name}** обновлен!", parse_mode="Markdown", reply_markup=get_category_survey_edit_keyboard(cat_id))
+
+@router.message(AdminStates.editing_category_survey_link)
+async def save_category_survey_link(message: Message, state: FSMContext):
+    data = await state.get_data()
+    cat_id = data.get('editing_category_id')
+    
+    if not cat_id:
+        await message.answer("❌ Ошибка: категория не выбрана.")
+        await state.clear()
+        return
+    
+    # Получаем текущий текст
+    survey = await CategorySurveyRepository.get_survey_for_category(cat_id)
+    current_text = survey.get('survey_text', '') if survey else ''
+    
+    # Сохраняем новую ссылку
+    await CategorySurveyRepository.update_survey(cat_id, current_text, message.text)
+    await state.clear()
+    
+    cat_name = await CategoryRepository.get_category_name(cat_id)
+    await message.answer(f"✅ Ссылка опроса для **{cat_name}** обновлена!", parse_mode="Markdown", reply_markup=get_category_survey_edit_keyboard(cat_id))
 
 @router.callback_query(F.data == "cancel_broadcast")
 async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
