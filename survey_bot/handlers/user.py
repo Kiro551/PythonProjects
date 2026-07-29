@@ -35,11 +35,7 @@ async def cmd_start(message: Message, state: FSMContext):
     else:
         # Если категория УЖЕ выбрана - просто показываем приветствие и меню
         await message.answer(welcome_text, reply_markup=get_user_main_menu())
-    
-    await message.answer(welcome_text, reply_markup=get_user_main_menu())
-    
-    # Если хотим жестко требовать выбор категории при первом /start:
-    # await start_category_survey(message, state)
+
 
 async def start_category_survey(message_or_query, state: FSMContext):
     """Универсальная функция запуска опроса по категориям"""
@@ -52,6 +48,7 @@ async def start_category_survey(message_or_query, state: FSMContext):
     else:
         await message_or_query.answer(text, reply_markup=kb)
 
+
 @router.message(F.text == "📝 Пройти опрос")
 async def send_survey(message: Message):
     settings = await SettingsRepository.get_settings()
@@ -59,10 +56,12 @@ async def send_survey(message: Message):
     link = settings.get('survey_link', 'Ссылка не задана.')
     await message.answer(f"{text}\n\n👉 {link}")
 
+
 @router.message(F.text == "💬 Обратная связь")
 async def start_feedback(message: Message, state: FSMContext):
     await state.set_state(FeedbackStates.waiting_for_message)
     await message.answer("Напишите ваше сообщение. Для отмены: /start")
+
 
 # --- ОБРАБОТКА ВЫБОРА КАТЕГОРИЙ ---
 
@@ -70,7 +69,6 @@ async def start_feedback(message: Message, state: FSMContext):
 async def process_degree_selection(callback: CallbackQuery, state: FSMContext):
     degree_id = int(callback.data.split("_")[2])
     
-    # Сохраняем ID степени в FSM, чтобы знать, какие факультеты грузить
     await state.update_data(degree_id=degree_id)
     await state.set_state(CategorySurveyStates.choosing_specialization)
     
@@ -78,12 +76,14 @@ async def process_degree_selection(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text("🏛 Выберите ваш факультет / направление:", reply_markup=kb)
     await callback.answer()
 
+
 @router.callback_query(F.data == "back_to_degrees", CategorySurveyStates.choosing_specialization)
 async def back_to_degrees(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CategorySurveyStates.choosing_degree)
     kb = await get_degree_keyboard()
     await callback.message.edit_text("🎓 Пожалуйста, уточните вашу степень обучения:", reply_markup=kb)
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("sel_spec_"), CategorySurveyStates.choosing_specialization)
 async def process_spec_selection(callback: CallbackQuery, state: FSMContext):
@@ -94,5 +94,9 @@ async def process_spec_selection(callback: CallbackQuery, state: FSMContext):
     await UserRepository.update_user_category(user_id, spec_id)
     await state.clear()
     
-    await callback.message.edit_text("✅ Спасибо! Данные успешно сохранены.")
+    # Получаем название выбранной категории для красивого сообщения
+    from database.repositories import CategoryRepository
+    cat_name = await CategoryRepository.get_category_name(spec_id)
+    
+    await callback.message.edit_text(f"✅ Спасибо! Вы выбрали: **{cat_name}**", parse_mode="Markdown")
     await callback.answer()
