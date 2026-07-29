@@ -10,8 +10,15 @@ from aiogram.exceptions import TelegramForbiddenError
 from filters import IsAdmin
 from states import AdminStates, AdminBroadcastStates, CategorySurveyStates
 from database.repositories import UserRepository, SettingsRepository, CategoryRepository
-from keyboards.inline import get_admin_menu, get_broadcast_target_keyboard, get_degree_keyboard
+from keyboards.inline import (
+    get_admin_menu, 
+    get_broadcast_type_keyboard, 
+    get_broadcast_target_keyboard,
+    get_degree_keyboard
+)
 from scheduler.tasks import scheduler
+import aiosqlite
+from config import settings
 
 router = Router()
 router.message.filter(IsAdmin())
@@ -32,12 +39,13 @@ async def cmd_users(message: Message):
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["User ID"])
-    for u_id in users: writer.writerow([u_id])
+    for u_id in users:
+        writer.writerow([u_id])
     
     file = BufferedInputFile(output.getvalue().encode('utf-8'), filename="users_list.csv")
     await message.answer_document(file, caption=f"Всего пользователей (без админов): {count}")
 
-# --- НАСТРОЙКИ (Без изменений, кроме добавления broadcast) ---
+# --- НАСТРОЙКИ ---
 @router.callback_query(F.data == "edit_text")
 async def process_edit_text(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.editing_text)
@@ -88,17 +96,41 @@ async def save_time(message: Message, state: FSMContext, bot: Bot):
     except ValueError:
         await message.answer("❌ Неверный формат.")
 
-# --- НОВАЯ ЛОГИКА: РАССЫЛКА ОПРОСА ПО КАТЕГОРИЯМ ---
+# --- НОВАЯ ЛОГИКА: РАССЫЛКА С ДВУМЯ РЕЖИМАМИ ---
 
-@router.callback_query(F.data == "broadcast_survey")
-async def start_broadcast_menu(callback: CallbackQuery):
-    kb = await get_broadcast_target_keyboard()
-    await callback.message.edit_text("📢 Кому отправить опрос по категориям?", reply_markup=kb)
+@router.callback_query(F.data == "broadcast_menu")
+async def start_broadcast_menu(callback: CallbackQuery, state: FSMContext):
+    """Показывает меню выбора типа рассылки"""
+    await state.set_state(AdminBroadcastStates.choosing_type)
+    kb = get_broadcast_type_keyboard()
+    await callback.message.edit_text("📢 Выберите тип рассылки:", reply_markup=kb)
     await callback.answer()
 
-@router.callback_query(F.data.startswith("bcast_"))
-async def process_broadcast_target(callback: CallbackQuery, bot: Bot):
-    target = callback.data.split("_")[1]
+@router.callback_query(F.data.startswith("bcast_type_"), AdminBroadcastStates.choosing_type)
+async def process_broadcast_type(callback: CallbackQuery, state: FSMContext):
+    """Обрабатывает выбор типа рассылки и показывает выбор категорий"""
+    broadcast_type = callback.data.split("_")[2]  # 'survey' или 'custom'
+    
+    # Сохраняем тип рассылки в FSM
+    await state.update_data(broadcast_type=broadcast_type)
+    await state.set_state(AdminBroadcastStates.waiting_for_target_category)
+    
+    kb = await get_broadcast_target_keyboard(broadcast_type)
+    
+    if broadcast_type == "survey":
+        text = "🔄 Кому отправить опрос для уточнения данных?"
+    else:
+        text = "✉️ Кому отправить кастомный опрос?"
+    
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("bcast_target_"), AdminBroadcastStates.waiting_for_target_category)
+async def process_broadcast_target(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """Обрабатывает выбор целевой категории и запускает рассылку"""
+    parts = callback.data.split("_")
+    target = parts[2]  # 'all', 'null', 'cat'
+    broadcast_type = parts[-1]  # 'survey' или 'custom'
     
     # Определяем список получателей
     if target == "all":
@@ -108,13 +140,7 @@ async def process_broadcast_target(callback: CallbackQuery, bot: Bot):
         users = await UserRepository.get_users_without_category()
         target_name = "пользователям без категории"
     elif target == "cat":
-        cat_id = int(callback.data.split("_")[2])
-        # Для рассылки по корневой категории (Бакалавр/Магистр) 
-        # мы должны найти всех, чья specialization (level 1) имеет этот parent_id
-        # Для простоты и скорости, давайте брать всех, у кого category_id совпадает с ID корня 
-        # ИЛИ чей parent_id равен этому корню. 
-        # Но в БД мы храним только level 1 (факультет). 
-        # Поэтому нам нужен специальный запрос.
+        cat_id = int(parts[3])
         users = await get_users_by_root_category(cat_id)
         cat_name = await CategoryRepository.get_category_name(cat_id)
         target_name = f"категории: {cat_name}"
@@ -124,14 +150,45 @@ async def process_broadcast_target(callback: CallbackQuery, bot: Bot):
 
     if not users:
         await callback.message.edit_text(f"⚠️ Нет пользователей для рассылки ({target_name}).", reply_markup=get_admin_menu())
+        await state.clear()
         await callback.answer()
         return
 
-    # Запускаем саму рассылку
-    await callback.message.edit_text(f"🚀 Начинаю рассылку опроса для: {target_name} ({len(users)} чел.)...")
+    # Сохраняем список пользователей в FSM
+    await state.update_data(target_users=users, target_name=target_name)
     
+    if broadcast_type == "survey":
+        # Режим "Уточнить данные" — сразу запускаем рассылку опроса
+        await callback.message.edit_text(f"🚀 Начинаю рассылку опроса для: {target_name} ({len(users)} чел.)...")
+        await perform_survey_broadcast(bot, users, target_name, callback.message)
+    else:
+        # Режим "Кастомный опрос" — просим ввести текст
+        await state.set_state(AdminBroadcastStates.waiting_for_custom_text)
+        await callback.message.edit_text(f"✉️ Введите текст кастомного опроса для: {target_name} ({len(users)} чел.):")
+    
+    await callback.answer()
+
+@router.message(AdminBroadcastStates.waiting_for_custom_text)
+async def process_custom_text(message: Message, state: FSMContext, bot: Bot):
+    """Получает кастомный текст и запускает рассылку"""
+    custom_text = message.text
+    
+    # Получаем данные из FSM
+    data = await state.get_data()
+    users = data.get('target_users', [])
+    target_name = data.get('target_name', 'неизвестно')
+    
+    await message.answer(f"🚀 Начинаю рассылку кастомного опроса для: {target_name} ({len(users)} чел.)...")
+    
+    await perform_custom_broadcast(bot, users, custom_text, target_name, message)
+    await state.clear()
+
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РАССЫЛКИ ---
+
+async def perform_survey_broadcast(bot: Bot, users: list, target_name: str, status_message: Message):
+    """Рассылка стандартного опроса с кнопками категорий"""
     success = 0
-    kb = await get_degree_keyboard() # Клавиатура с выбором степени
+    kb = await get_degree_keyboard()
     text = "🎓 Пожалуйста, пройдите короткий опрос и уточните вашу степень обучения:"
     
     for user_id in users:
@@ -142,20 +199,27 @@ async def process_broadcast_target(callback: CallbackQuery, bot: Bot):
             pass
         except Exception:
             pass
-            
-    await callback.message.answer(f"✅ Рассылка завершена! Доставлено: {success} из {len(users)}.", reply_markup=get_admin_menu())
-    await callback.answer()
+    
+    await status_message.answer(f"✅ Рассылка опроса завершена! Доставлено: {success} из {len(users)}.", reply_markup=get_admin_menu())
 
-@router.callback_query(F.data == "cancel_broadcast")
-async def cancel_broadcast(callback: CallbackQuery):
-    await callback.message.edit_text("Рассылка отменена.", reply_markup=get_admin_menu())
-    await callback.answer()
+async def perform_custom_broadcast(bot: Bot, users: list, custom_text: str, target_name: str, status_message: Message):
+    """Рассылка кастомного текста"""
+    success = 0
+    
+    for user_id in users:
+        try:
+            await bot.send_message(user_id, custom_text)
+            success += 1
+        except TelegramForbiddenError:
+            pass
+        except Exception:
+            pass
+    
+    await status_message.answer(f"✅ Кастомная рассылка завершена! Доставлено: {success} из {len(users)}.", reply_markup=get_admin_menu())
 
-# Вспомогательная функция для поиска пользователей по корневой категории
 async def get_users_by_root_category(root_cat_id: int) -> list[int]:
-    """Находит всех пользователей, чья выбранная категория (факультет) принадлежит корню (степени)"""
+    """Находит всех пользователей, чья выбранная категория принадлежит корню (степени)"""
     async with aiosqlite.connect(settings.DB_NAME) as db:
-        # Находим все ID дочерних категорий (факультетов) для данной степени
         cursor = await db.execute("SELECT id FROM categories WHERE parent_id = ?", (root_cat_id,))
         child_ids = [row[0] for row in await cursor.fetchall()]
         
@@ -173,6 +237,8 @@ async def get_users_by_root_category(root_cat_id: int) -> list[int]:
         cursor = await db.execute(query, (*child_ids, *settings.ADMIN_IDS))
         return [row[0] for row in await cursor.fetchall()]
 
-# Не забываем импорт для вспомогательной функции
-import aiosqlite
-from config import settings
+@router.callback_query(F.data == "cancel_broadcast")
+async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Рассылка отменена.", reply_markup=get_admin_menu())
+    await callback.answer()

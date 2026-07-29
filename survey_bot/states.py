@@ -9,10 +9,11 @@ class AdminStates(StatesGroup):
 class FeedbackStates(StatesGroup):
     waiting_for_message = State()
 
-# НОВЫЕ СОСТОЯНИЯ
 class CategorySurveyStates(StatesGroup):
     choosing_degree = State()
     choosing_specialization = State()
 
 class AdminBroadcastStates(StatesGroup):
-    waiting_for_target_category = State() # Ожидание выбора категории для рассылки
+    choosing_type = State()              # Выбор типа рассылки
+    waiting_for_target_category = State() # Выбор категории
+    waiting_for_custom_text = State()     # Ожидание ввода кастомного текста

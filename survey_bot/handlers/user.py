@@ -65,7 +65,7 @@ async def start_feedback(message: Message, state: FSMContext):
 
 # --- ОБРАБОТКА ВЫБОРА КАТЕГОРИЙ ---
 
-@router.callback_query(F.data.startswith("sel_deg_"), CategorySurveyStates.choosing_degree)
+@router.callback_query(F.data.startswith("sel_deg_"))
 async def process_degree_selection(callback: CallbackQuery, state: FSMContext):
     degree_id = int(callback.data.split("_")[2])
     
@@ -85,18 +85,19 @@ async def back_to_degrees(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("sel_spec_"), CategorySurveyStates.choosing_specialization)
+@router.callback_query(F.data.startswith("sel_spec_"))
 async def process_spec_selection(callback: CallbackQuery, state: FSMContext):
     spec_id = int(callback.data.split("_")[2])
     user_id = callback.from_user.id
     
-    # Сохраняем финальный выбор в БД
+    # Сохраняем финальный выбор в БД (обновляем категорию)
     await UserRepository.update_user_category(user_id, spec_id)
     await state.clear()
     
     # Получаем название выбранной категории для красивого сообщения
     from database.repositories import CategoryRepository
     cat_name = await CategoryRepository.get_category_name(spec_id)
+
     
     await callback.message.edit_text(f"✅ Спасибо! Вы выбрали: **{cat_name}**", parse_mode="Markdown")
     await callback.answer()
