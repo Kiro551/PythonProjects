@@ -15,7 +15,9 @@ from keyboards.inline import (
     get_admin_menu, 
     get_broadcast_type_keyboard, 
     get_broadcast_target_keyboard,
-    get_degree_keyboard
+    get_degree_keyboard,
+    get_category_surveys_menu,
+    get_category_survey_edit_keyboard
 )
 from scheduler.tasks import scheduler
 import aiosqlite
@@ -269,7 +271,7 @@ async def show_category_survey_edit(callback: CallbackQuery, state: FSMContext):
         text += f"📝 Текст: {survey.get('survey_text', 'Не задан')}\n"
         text += f"🔗 Ссылка: {survey.get('survey_link', 'Не задана')}"
     else:
-        text = f"🎓 Опрос для категории: **{cat_name}**\n\n⚠️ Опрос еще не настроен."
+        text = f"🎓 Опрос для категории: **{cat_name}**\n\n Опрос еще не настроен."
     
     kb = get_category_survey_edit_keyboard(cat_id)
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
