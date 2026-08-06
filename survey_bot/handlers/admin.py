@@ -144,7 +144,7 @@ async def process_broadcast_target(callback: CallbackQuery, state: FSMContext, b
         target_name = "пользователям без категории"
     elif target == "cat":
         cat_id = int(parts[3])
-        users = await get_users_by_root_category(cat_id)
+        users = await UserRepository.get_users_by_root_category(cat_id)
         cat_name = await CategoryRepository.get_category_name(cat_id)
         target_name = f"категории: {cat_name}"
     else:
@@ -220,25 +220,25 @@ async def perform_custom_broadcast(bot: Bot, users: list, custom_text: str, targ
     
     await status_message.answer(f"✅ Кастомная рассылка завершена! Доставлено: {success} из {len(users)}.", reply_markup=get_admin_menu())
 
-async def get_users_by_root_category(root_cat_id: int) -> list[int]:
-    """Находит всех пользователей, чья выбранная категория принадлежит корню (степени)"""
-    async with aiosqlite.connect(settings.DB_NAME) as db:
-        cursor = await db.execute("SELECT id FROM categories WHERE parent_id = ?", (root_cat_id,))
-        child_ids = [row[0] for row in await cursor.fetchall()]
-        
-        if not child_ids:
-            return []
-            
-        placeholders = ','.join('?' for _ in child_ids)
-        admin_placeholders = ','.join('?' for _ in settings.ADMIN_IDS)
-        
-        query = f"""
-            SELECT user_id FROM users 
-            WHERE category_id IN ({placeholders}) 
-            AND user_id NOT IN ({admin_placeholders})
-        """
-        cursor = await db.execute(query, (*child_ids, *settings.ADMIN_IDS))
-        return [row[0] for row in await cursor.fetchall()]
+##async def get_users_by_root_category(root_cat_id: int) -> list[int]:
+##    """Находит всех пользователей, чья выбранная категория принадлежит корню (степени)"""
+##    async with aiosqlite.connect(settings.DB_NAME) as db:
+##        cursor = await db.execute("SELECT id FROM categories WHERE parent_id = ?", (root_cat_id,))
+##        child_ids = [row[0] for row in await cursor.fetchall()]
+##        
+##        if not child_ids:
+##            return []
+##            
+##        placeholders = ','.join('?' for _ in child_ids)
+##        admin_placeholders = ','.join('?' for _ in settings.ADMIN_IDS)
+##        
+##        query = f"""
+##            SELECT user_id FROM users 
+##            WHERE category_id IN ({placeholders}) 
+##            AND user_id NOT IN ({admin_placeholders})
+##        """
+##        cursor = await db.execute(query, (*child_ids, *settings.ADMIN_IDS))
+##        return [row[0] for row in await cursor.fetchall()]
 
 # --- НАСТРОЙКА ОПРОСОВ ПО КАТЕГОРИЯМ ---
 
@@ -267,14 +267,14 @@ async def show_category_survey_edit(callback: CallbackQuery, state: FSMContext):
     survey = await CategorySurveyRepository.get_survey_for_category(cat_id)
     
     if survey:
-        text = f"🎓 Опрос для категории: **{cat_name}**\n\n"
+        text = f"🎓 Опрос для категории: <b>{cat_name}</b>\n\n"
         text += f"📝 Текст: {survey.get('survey_text', 'Не задан')}\n"
         text += f"🔗 Ссылка: {survey.get('survey_link', 'Не задана')}"
     else:
-        text = f"🎓 Опрос для категории: **{cat_name}**\n\n Опрос еще не настроен."
+        text = f"🎓 Опрос для категории: <b>{cat_name}</b>\n\n Опрос еще не настроен."
     
     kb = get_category_survey_edit_keyboard(cat_id)
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("edit_cat_survey_text_"))

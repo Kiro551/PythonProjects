@@ -27,7 +27,6 @@ async def main():
     # Запускаем планировщик
     scheduler.start()
     logging.info("Планировщик запущен.")
-
     logging.info("Бот запущен.")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

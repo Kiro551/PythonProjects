@@ -2,11 +2,9 @@ import logging
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
 from database.repositories import UserRepository, SettingsRepository
 from config import settings as app_settings
 
-# Инициализируем планировщик (укажите ваш актуальный часовой пояс)
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
 async def broadcast_survey(bot: Bot):
@@ -16,28 +14,24 @@ async def broadcast_survey(bot: Bot):
     link = settings.get('survey_link', 'Ссылка не задана.')
     full_message = f"{text}\n\n👉 {link}"
     
-    users = await UserRepository.get_all_users()
+    users = await UserRepository.get_all_non_admin_users() 
     success_count = 0
     
     if not users:
-        # Если пользователей нет, просто уведомляем админов
         for admin_id in app_settings.ADMIN_IDS:
             await bot.send_message(admin_id, "⚠️ Рассылка не выполнена: в базе данных нет пользователей.")
         return
-
+        
     for user_id in users:
         try:
             await bot.send_message(user_id, full_message)
             success_count += 1
         except TelegramForbiddenError:
-            # Пользователь заблокировал бота, пропускаем его
             pass
         except Exception as e:
             logging.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
-            
-    # ИСПРАВЛЕНИЕ: Отправляем отчет о рассылке ВСЕМ админам из списка
+
     report_text = f"📊 Рассылка завершена.\nУспешно доставлено: {success_count} из {len(users)}."
-    
     for admin_id in app_settings.ADMIN_IDS:
         try:
             await bot.send_message(admin_id, report_text)

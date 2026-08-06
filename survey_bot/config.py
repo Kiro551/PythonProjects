@@ -17,13 +17,10 @@ class Settings(BaseSettings):
     @field_validator('ADMIN_IDS', mode='before')
     @classmethod
     def parse_admin_ids(cls, v):
-        # Если пришла строка (например, "123, 456, 789")
         if isinstance(v, str):
             return [int(x.strip()) for x in v.split(',') if x.strip()]
-        # Если Pydantic уже превратил одиночное значение в int (например, "123")
         elif isinstance(v, int):
             return [v]
-        # Если это уже список, убеждаемся, что все элементы - числа
         elif isinstance(v, list):
             return [int(x) for x in v]
         return v
@@ -32,6 +29,6 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Для отладки выведем, сколько админов загрузилось и их ID
+# Cколько админов загрузилось + их ID
 print(f"✅ Настройки загружены. Администраторов в системе: {len(settings.ADMIN_IDS)}")
 print(f"   Список ID админов: {settings.ADMIN_IDS}")

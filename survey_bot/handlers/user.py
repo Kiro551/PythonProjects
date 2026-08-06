@@ -123,5 +123,5 @@ async def process_spec_selection(callback: CallbackQuery, state: FSMContext):
     cat_name = await CategoryRepository.get_category_name(spec_id)
 
     
-    await callback.message.edit_text(f"✅ Спасибо! Вы выбрали: **{cat_name}**", parse_mode="Markdown")
+    await callback.message.edit_text(f"✅ Спасибо! Вы выбрали: <b>{cat_name}</b>", parse_mode="HTML")
     await callback.answer()
