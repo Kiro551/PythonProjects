@@ -340,3 +340,77 @@ async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("Рассылка отменена.", reply_markup=get_admin_menu())
     await callback.answer()
+
+@router.message(Command("users_status"))
+async def cmd_users_status(message: Message):
+    """Просмотр детального статуса всех пользователей с экспортом в CSV"""
+    users = await UserRepository.get_all_users_with_status()
+    count = len(users)
+    
+    if count == 0:
+        await message.answer("Пока нет пользователей.")
+        return
+
+    # Создаем CSV файл
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["User ID", "Username", "First Name", "Степень", "Факультет", "Курс", "Дата регистрации"])
+    
+    for user in users:
+        writer.writerow([
+            user['user_id'],
+            user['username'] or 'N/A',
+            user['first_name'] or 'N/A',
+            user['degree'] or 'Не выбрана',
+            user['faculty'] or 'Не выбран',
+            user['course'] if user['course'] else 'Не указан',
+            user['joined_at'] or 'N/A'
+        ])
+    
+    file = BufferedInputFile(output.getvalue().encode('utf-8'), filename="users_status.csv")
+    await message.answer_document(
+        file, 
+        caption=f"📊 Статус пользователей (без админов): {count} чел.\n"
+                f"Файл содержит: ID, Username, Имя, Степень, Факультет, Курс, Дата регистрации"
+    )
+
+@router.callback_query(F.data == "users_status_menu")
+async def show_users_status_menu(callback: CallbackQuery):
+    """Показывает информацию о статусе пользователей прямо в чате"""
+    users = await UserRepository.get_all_users_with_status()
+    
+    if not users:
+        await callback.message.edit_text("Пока нет пользователей.", reply_markup=get_admin_menu())
+        await callback.answer()
+        return
+    
+    # Группируем по степени и факультету
+    stats = {}
+    for user in users:
+        degree = user['degree'] or 'Не выбрана'
+        faculty = user['faculty'] or 'Не выбран'
+        course = user['course'] or 'Не указан'
+        
+        key = f"{degree} - {faculty}"
+        if key not in stats:
+            stats[key] = {}
+        if course not in stats[key]:
+            stats[key][course] = 0
+        stats[key][course] += 1
+    
+    # Формируем красивое сообщение
+    text = "📊 <b>Статус пользователей:</b>\n\n"
+    for category, courses in stats.items():
+        text += f"🎓 <b>{category}</b>\n"
+        for course, count in sorted(courses.items()):
+            text += f"   • {course} курс: {count} чел.\n"
+        text += "\n"
+    
+    text += f"\n👥 Всего: {len(users)} пользователей"
+    
+    await callback.message.edit_text(
+        text, 
+        parse_mode="HTML",
+        reply_markup=get_admin_menu()
+    )
+    await callback.answer()

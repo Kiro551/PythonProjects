@@ -1,4 +1,5 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database.repositories import CategoryRepository
 
 def get_admin_menu() -> InlineKeyboardMarkup:
@@ -68,3 +69,15 @@ def get_category_survey_edit_keyboard(category_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔗 Изменить ссылку", callback_data=f"edit_cat_survey_link_{category_id}")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="category_surveys_menu")]
     ])
+
+def get_admin_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Изменить текст опроса", callback_data="edit_text")
+    builder.button(text="✏️ Изменить приветствие", callback_data="edit_welcome")
+    builder.button(text="🔗 Изменить ссылку", callback_data="edit_link")
+    builder.button(text="⏰ Установить время рассылки", callback_data="set_time")
+    builder.button(text="📢 Рассылка", callback_data="broadcast_menu")
+    builder.button(text="🎓 Опросы по категориям", callback_data="category_surveys_menu")
+    builder.button(text="📊 Статус пользователей", callback_data="users_status_menu")  # НОВАЯ КНОПКА
+    builder.adjust(1)
+    return builder.as_markup()
