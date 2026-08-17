@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineKeyboardBuilder
 from database.repositories import CategoryRepository
 
 def get_admin_menu() -> InlineKeyboardMarkup:
@@ -52,6 +52,14 @@ async def get_category_surveys_menu() -> InlineKeyboardMarkup:
         keyboard.append([InlineKeyboardButton(text=f"🎓 {name}", callback_data=f"cat_survey_{cat_id}")])
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_admin")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+async def get_course_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора курса обучения"""
+    builder = InlineKeyboardBuilder()
+    for course in range(1, 5):  # Курсы от 1 до 4
+        builder.button(text=f"{course} курс", callback_data=f"sel_course_{course}")
+    builder.adjust(2)
+    return builder.as_markup()
 
 def get_category_survey_edit_keyboard(category_id: int) -> InlineKeyboardMarkup:
     """Кнопки редактирования опроса для конкретной категории"""

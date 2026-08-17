@@ -14,6 +14,7 @@ class FeedbackStates(StatesGroup):
 class CategorySurveyStates(StatesGroup):
     choosing_degree = State()
     choosing_specialization = State()
+    choosing_course = State()  
 
 class AdminBroadcastStates(StatesGroup):
     choosing_type = State()

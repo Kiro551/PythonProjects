@@ -10,6 +10,7 @@ async def init_db():
                 username TEXT,
                 first_name TEXT,
                 category_id INTEGER,
+                course INTEGER,
                 joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(category_id) REFERENCES categories(id)
             )
@@ -51,13 +52,19 @@ async def init_db():
                 FOREIGN KEY(category_id) REFERENCES categories(id)
             )
         ''')
-
+        
         # === МИГРАЦИИ ===
         cursor = await db.execute("PRAGMA table_info(users)")
-        if 'category_id' not in [row[1] for row in await cursor.fetchall()]:
+        columns = [row[1] for row in await cursor.fetchall()]
+        
+        if 'category_id' not in columns:
             await db.execute("ALTER TABLE users ADD COLUMN category_id INTEGER")
             print("✅ Миграция: добавлена колонка category_id в users")
-
+        
+        if 'course' not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN course INTEGER")
+            print("✅ Миграция: добавлена колонка course в users")
+        
         cursor = await db.execute("PRAGMA table_info(survey_settings)")
         if 'welcome_text' not in [row[1] for row in await cursor.fetchall()]:
             await db.execute("ALTER TABLE survey_settings ADD COLUMN welcome_text TEXT DEFAULT 'Добро пожаловать!'")
@@ -65,7 +72,6 @@ async def init_db():
         # === ЗАПОЛНЕНИЕ КАТЕГОРИЙ ПО УМОЛЧАНИЮ ===
         cursor = await db.execute("SELECT COUNT(*) FROM categories")
         count = (await cursor.fetchone())[0]
-        
         if count == 0:
             print("🌱 База категорий пуста. Заполняем начальными данными...")
             await db.execute("INSERT INTO categories (name, parent_id, level) VALUES ('Бакалавриат', NULL, 0)")
@@ -79,5 +85,5 @@ async def init_db():
             await db.execute("INSERT INTO categories (name, parent_id, level) VALUES ('Направление 1', ?, 1)", (degrees['Магистратура'],))
             await db.execute("INSERT INTO categories (name, parent_id, level) VALUES ('Направление 2', ?, 1)", (degrees['Магистратура'],))
             print("✅ Категории успешно созданы!")
-
+        
         await db.commit()
